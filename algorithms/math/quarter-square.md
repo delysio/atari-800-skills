@@ -1,6 +1,6 @@
 # Quarter Square
 
-## 10.5 QS (Quarter-Square) Multiply (TORUS3D pattern)
+## 10.5 QS (Quarter-Square) Multiply
 
 The identity `(a+b)^2 - (a-b)^2 = 4ab` lets a square table replace shift-add
 multiplication. For an exact 8×8→16 result, store `floor(n*n/4)` for

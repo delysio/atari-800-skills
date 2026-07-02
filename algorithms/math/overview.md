@@ -16,7 +16,7 @@
 | Range-clamp [LO..HI] | §10.3 |
 | Two's-complement negation (16-bit) | §10.3 |
 | BIT-trick for carry arithmetic | §10.3 |
-| QS multiply (TORUS3D / quarter-square) | §10.5 |
+| QS multiply (quarter-square) | §10.5 |
 | Sine/cosine lookup tables | §10.6 |
 | Logarithmic atan2 (no division) | §10.9 |
 | Distance via squared-table + sqrt | §10.10 |

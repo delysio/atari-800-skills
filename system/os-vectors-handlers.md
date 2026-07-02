@@ -9,7 +9,7 @@ description: >-
 
 > **When to load:** The task touches VBI/DLI/CIO/SIO vectors, DOS entry points, device handlers, or OS coexistence.
 > **Do not use for:** Bare register timing; load `hardware/antic.md`, `hardware/pokey.md`, or `hardware/cpu.md`.
-> **Primary sources:** `atari-documentation/memory-map/details.txt`, `overview.txt`, Atariki CIO/file-access articles, `Altirra-hardware/extracted_chapters/chapter03.md`, `chapter04.md`, `chapter09.md`.
+> **Source note:** This file is self-contained; use the internal hardware references named above for register timing.
 
 ## Quick Lookup
 

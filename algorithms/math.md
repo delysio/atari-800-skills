@@ -9,7 +9,7 @@ Load only the focused file that matches the task.
 - [division.md](math/division.md) - 10.2 Division
 - [range-modulo-negation.md](math/range-modulo-negation.md) - 10.3 Modulo, Range, Negation
 - [65816-math.md](math/65816-math.md) - 10.4 65816-Specific Math
-- [quarter-square.md](math/quarter-square.md) - 10.5 QS (Quarter-Square) Multiply (TORUS3D pattern)
+- [quarter-square.md](math/quarter-square.md) - 10.5 QS (Quarter-Square) Multiply
 - [trig-tables.md](math/trig-tables.md) - 10.6 8-bit Sine/Cosine Tables
 - [sqrt-log.md](math/sqrt-log.md) - 10.7 16-bit Sqrt + 8-bit Log Table
 - [floating-point.md](math/floating-point.md) - 10.8 Floating-Point Entry

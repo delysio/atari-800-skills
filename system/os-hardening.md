@@ -6,7 +6,7 @@ description: >-
 
 # 09 - System Hardening
 
-> **Primary sources:** Atariki RESET-survival and SpartaDOS X startup articles, summarized here in English, plus Altirra hardware timing notes.
+> **Source note:** This file is self-contained.
 > **Scope:** OS-ROM disable, trampoline handler, VCOUNT, WSYNC, RESET survival, SpartaDOS X
 > **Key items:** PORTB $D301; NMIEN $D40E; NMIST $D40F; VCOUNT $D40B; WSYNC $D40A; SDLSTL $0230
 
@@ -16,7 +16,6 @@ description: >-
 |---|---|
 | OS-ROM disable / re-enable | §9.1 |
 | Trampoline handler skeleton | §9.1 |
-| Calling OS routines while ROM is off | §9.1 |
 | VCOUNT vs VBLANK; PAL VBI split | §9.2 |
 | RESET survival 400/800 vs XL/XE | §9.3 |
 | Warm-flag cold-boot detection | §9.3 |
@@ -47,80 +46,42 @@ With OS ROM off, all software interrupts (keyboard scan, SIO, VBI/DLI dispatch) 
 
 ### Trampoline handler
 
-The robust pattern is:
-
-1. Install RAM vectors under the OS ROM at `$FFFA` and `$FFFE` while ROM is
-   disabled.
-2. Keep the trampoline outside any region that may become ROM or banked RAM.
-3. On interrupt, turn OS ROM back on via `PORTB bit 0`.
-4. Duplicate the original stacked P value when handing control to the ROM
-   handler, because the OS uses I/B flag state to distinguish IRQ-vs-BRK and
-   NMI-during-IRQ cases.
-5. Return through a small `iret` stub that restores the previous `PORTB`
-   configuration and finishes with `RTI`.
-
-Minimal schematic:
+The trampoline re-enables the OS ROM, enters the correct OS handler path, then restores the OS-off state before returning:
 
 ```asm
-nmiint  sec
-        .byte $24              ; BIT zp skips CLC below
-irqint  clc
-        inc   PORTB            ; OS ROM on
+os_trampoline_handler
         pha
         txa
         pha
-        tsx
-        lda   #>iret
+        tya
         pha
-        lda   #<iret
-        pha
-        lda   $0103,x          ; original P pushed by interrupt entry
-        pha
-        bcs   @nmi
-        jmp   ($fffe)          ; IRQ/BRK vector in OS ROM
-@nmi    jmp   ($fffa)          ; NMI vector in OS ROM
-iret    pla
+        lda PORTB
+        sta trampoline_PORTB_save
+
+        lda #$01
+        sta PORTB             ; force OS ROM on
+
+        lda NMIST              ; $D40F
+        and #$80               ; DLI?
+        beq @chk_vbi
+        jsr os_dli_entry
+        bne @done             ; always branch
+
+@chk_vbi lda NMIST
+        and #$40               ; VBL?
+        beq @done
+        jsr os_vbi_entry
+
+@done   pla
+        tay
+        pla
         tax
         pla
-        dec   PORTB            ; OS ROM off again
+        sta PORTB              ; restore ROM-off state
         rti
 ```
 
 **Key insight:** NMIST bits are sticky -- they accumulate until the register is read and cleared. Always read NMIST to both identify and acknowledge the pending source.
-
-### OS Calls While ROM Is Off
-
-If application code calls an OS routine while ROM is banked out, wrap it with a
-PORTB save/restore trampoline. Use official jump-table entries (`SIOV`, `CIOV`,
-`SETVBV`, `XITVBV`) where possible:
-
-```asm
-call_siov_rom_on
-        lda   PORTB
-        pha
-        ora   #$01
-        sta   PORTB
-        jsr   SIOV
-        pla
-        sta   PORTB
-        rts
-```
-
-For handler-table vectors that are stored as `address-1` and entered through
-`RTS`, push the high byte then low byte of the vector and `RTS` into it after
-turning ROM on.
-
-### DLI Fast Path With ROM Off
-
-DLI timing may be too tight for a full ROM trampoline. If the custom NMI entry
-detects `NMIST` bit 7, it may jump directly through `VDSLST ($0200)` with the
-current memory map. The DLI handler must then live outside banked/ROM regions
-and must enable OS ROM itself before calling any ROM routine.
-
-Do not place trampolines, DLI handlers, or OS-call wrappers in these risky
-ranges unless that memory configuration is guaranteed: `$5000-$57FF`,
-`$8000-$9FFF`, `$A000-$BFFF`, `$C000-$FFFF`, `$D000-$D7FF`, `$D800-$DFFF`,
-and `$4000-$7FFF` when XE/RAMBO banking is active.
 
 ---
 
@@ -130,8 +91,8 @@ Without the OS running, RTCLOK is unavailable. `VCOUNT` at `$D40B` is the substi
 
 ```asm
 wait_scanline_80
-        ldx #$50               ; target VCOUNT value, physical scan line / 2
-@poll   lda VCOUNT             ; $D40B -- vertical counter
+        ldx #$50               ; target scan line
+@poll   lda VCOUNT             ; $D40B -- increments every scan line
         cpx VCOUNT
         bne @poll              ; loop until VCOUNT == X
         rts
@@ -139,12 +100,11 @@ wait_scanline_80
 
 | Counter | NTSC range | PAL range | Reset |
 |---------|-----------|-----------|-------|
-| `VCOUNT` | 0--130 | 0--155 | wraps each frame |
-| Physical scan lines | 262 | 312 | -- |
+| `VCOUNT` | 0--227 | 0--311 | wraps at VBLANK start |
+| VBI split point | line 228 | line 250 | -- |
 | Horizontal sync | cycle 0 (per line) | cycle 0 (per line) | -- |
 
 Notes:
-- `VCOUNT` reports the vertical line count divided by two; compare against 130/155, not 262/312.
 - VCOUNT is **not** reset by the RESET key; use a warm-flag in RAM to differentiate cold boot from warm restart see section 9.3.
 - On a hardware reset, VCOUNT holds an indeterminate value -- do not read it until frame 1.
 - `WSYNC` causes the CPU to stall until the NEXT horizontal sync. Cycle count variance depends on where the write lands within the current 114-cycle line.
@@ -273,3 +233,35 @@ Key equivalences:
 - SDX formal parameter: `DT_xxx` types for `DCB` fields; workflow-type parameters passed as `DCB` command structures.
 - MADS `SAVE`/`RUN` blocks; generated from `.BYTE`/`.WORD`/`.LONG`/`.SAV`/`.SAV offset,length`.
 - `BLK UPDATE EXTRN` mirroring all `PUBLIC`/`.EXT` symbol entries from assembly.
+
+## 9.5 BREAK-Key Abort in Long Operations
+
+Atari OS records BREAK-key activity through `IRQSTAT ($0011)`. In ordinary OS
+operation this byte is normally `$FF`; when BREAK is pressed, the OS clears it.
+Long-running routines that do not call CIO often need to poll it explicitly.
+
+Use this pattern in code that should be abortable without waiting for disk or
+console I/O:
+
+```asm
+IRQSTAT = $11
+
+check_break
+        lda IRQSTAT
+        beq ?break
+        rts
+?break  dec IRQSTAT            ; restore to $FF after detecting BREAK
+        lda #$80               ; BREAK KEY ABORT-style error code
+        ; jump to caller's error path or SDX U_FAIL equivalent
+        rts
+```
+
+If running under SpartaDOS X and using its structured error handlers, install
+the failure handler before entering the protected routine and remove it after
+the routine finishes. Keep the handler nesting shallow; SDX has a finite
+internal handler stack. If no custom handler is installed, an abort should
+fall through to the previous handler or system error path.
+
+Reset `IRQSTAT` after detecting BREAK. Console routines can also check this
+byte and may raise an unexpected BREAK error later if stale state is left
+behind.

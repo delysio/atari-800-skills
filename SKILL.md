@@ -58,7 +58,7 @@ This skill is self-contained. The topic files below are the available reference 
 - **`algorithms/bit-ops.md`** — Bit shifts/rotates, flag testing, zero-page idioms, INC/DEC hardware hazards.
 - **`algorithms/optimization.md`** — 6502 size/speed patterns, jump tables, compare-free loops, flag-preserving tests.
 - **`algorithms/compression.md`** — RLE, LZ4, Exomizer, DEFLATE decompression patterns.
-- **`algorithms/3d-graphics.md`** — Matrix rotation, projection, shading, span buffers, culling.
+- **`algorithms/3d-graphics.md`** — Real-time 3D: fixed-point math, rotation/projection, span-buffer rasterization & fill strategies, Gouraud shading & texturing, GTIA luminance display modes, double buffering, culling & depth sort.
 - **`algorithms/sorting.md`** — 8/16-bit optimal sorts, bucket sort, CombSort, ShellSort, Quicksort.
 - **`algorithms/macros.md`** — Reusable MADS macros for memory, arithmetic, shifting, interpolation.
 

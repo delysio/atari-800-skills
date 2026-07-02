@@ -17,7 +17,7 @@ description: >-
 | ATASCII screen codes table | §8.1 |
 | IOCB table + CIO GET/PUT/PRINT boilerplate | §8.2 |
 | RAW key scancode read (KBCODE\u2192shifter) | §8.3 |
-| Binary-to-hex digit lookup / decimal-mode nibble trick | §8.4 |
+| Binary-to-hex digit lookup | §8.4 |
 | 16-bit decimal-to-screen with EOL $9B | §8.4 |
 
 ## 8.1 ATASCII Screen Code Table
@@ -120,8 +120,7 @@ The Atari keyboard matrix produces scancodes at `$D209` (KBCODE register), key m
 
 ### Binary-to-hex digit
 
-Convert low nibble in A to a single hex ASCII digit. The table form is fastest
-when a register is free:
+Convert low nibble in A to a single hex ASCII digit, then write it to screen RAM:
 
 ```asm
 hex_lookup
@@ -132,76 +131,6 @@ to_ascii_hex
         lda    hex_lookup,x     ; A = ASCII '0'-'F'
         rts
 ```
-
-Decimal-mode form is compact and branchless for a nibble already in A:
-
-```asm
-; in:  A = $00..$0f
-; out: A = ASCII '0'..'9','A'..'F'
-; clobbers: C, D flag temporarily
-to_ascii_hex_bcd
-        cmp   #$0a              ; C=1 for A-F
-        sed
-        adc   #$30              ; BCD add turns $0a-$0f into $41-$46
-        cld
-        rts
-```
-
-Use this only when the caller can tolerate C/N/Z changes. Always leave decimal
-mode clear before returning to Atari OS code, DLI/VBI handlers, math routines,
-or any binary `ADC/SBC` path. For multiple nibbles, set `SED` once around the
-loop and `CLD` once at the end.
-
-### BCD helpers
-
-Convert one packed BCD byte (`$00..$99`) to binary:
-
-```asm
-; in:  A = packed BCD, e.g. $42
-; out: A = binary 42
-; tmp is zero-page scratch
-bcd_to_bin
-        tax
-        and   #$f0
-        lsr
-        sta   tmp               ; high nibble * 8
-        lsr
-        lsr                     ; high nibble * 2
-        adc   tmp               ; high nibble * 10, carry is clear
-        sta   tmp
-        txa
-        and   #$0f
-        adc   tmp
-        rts
-```
-
-For byte values in the range `0..99`, decimal mode can build packed BCD without
-division. The table entries are one less than each bit's BCD value because the
-add is done with carry set by `LSR`:
-
-```asm
-; in:  A = binary 0..99
-; out: A = packed BCD $00..$99
-bin_to_bcd_99
-        sed
-        sta   tmp
-        lda   #$00
-        ldx   #$07
-@bit    lsr   tmp
-        bcc   @skip
-        adc   b2b_table-1,x
-@skip   dex
-        bne   @bit
-        cld
-        rts
-
-b2b_table
-        .byte $63,$31,$15,$07,$03,$01,$00
-```
-
-For general 16-bit decimal display, prefer repeated divide-by-10 from
-`algorithms/math.md`; it is easier to audit than decimal-mode bit accumulation
-with hundreds handling.
 
 ### Decimal to screen (16-bit unsigned, right-aligned)
 
@@ -235,6 +164,5 @@ Dividing a 16-bit value by 10: See math routines §10.2 (16-bit ÷10, 79 or 96 b
 
 ---
 
-*earlier coverage (full content in inline reference):*
+*Earlier coverage in this file:*
 *ATASCII table §8.1; CIO GET/PUT/PRINT §8.2; scancodes §8.3; number base conversion §8.4.*
-Source notes: character output, string printing, editor control codes, key scancodes, and ATASCII/screen-code conversion are summarized from the Atariki screen I/O articles in English.

@@ -1,91 +1,76 @@
-# Culling Depth
+# Culling and depth sort
 
-## 17.7 Object-Space Culling
+> **Load when:** you need to drop hidden faces and order the visible ones
+> for correct overlap. Sits between `projection.md` and `rasterizer.md` in
+> the main loop (`display.md` §6).
 
-Rotate face normal into camera Z via 3 LUT lookups (no multiply).
-Reject before any per-vertex transform:
+## 1. Back-face culling
+
+Don't rasterize faces pointing away from the camera.
+
+- **Screen-space cross-product sign.** After projection, for a face's
+  first three screen vertices, `cross = dx0·dy1 − dx1·dy0`. Its sign tells
+  you the winding; one sign is front-facing, the other is back. Reject the
+  back set. Works after projection, needs one multiply pair.
+- **Object-space pre-transform reject (cheapest).** Rotate only the *view
+  direction* into object space once per frame. Build three small 256-entry
+  tables from its components, `VX[n]=viewX·n`, `VY[n]=viewY·n`,
+  `VZ[n]=viewZ·n` — using the **signed** two-ramp build from `rotation.md`
+  §3, because normal components are signed (indices 128..255 are the
+  negative values). Then the dot of the view with each face's stored normal
+  `(nx,ny,nz)` is **three lookups and two adds — no multiply** — and faces
+  failing it are dropped **before** you rotate and project their vertices:
 
 ```asm
-ObjectCull
-        ldx    #$00
-        lda    #$00
-        sta    vis_count
-
-@face   ldy    fn_lo,x            ; fnx index into ROT_M20
-        lda    ROT_M20,y          ; m20*fnx
-        clc
-        adc    ROT_M21,y          ; + m21*fny
-        clc
-        adc    ROT_M22,y          ; + m22*fnz  = dot(N, M[row2])
-        bmi    @hide              ; facing away
-        cmp    cull_thresh,x
-        bcs    @hide              ; too deep
-        txa
-        ldy    vis_count
-        sta    vis_quad_list,y
-        iny
-        sty    vis_count
+@face   ldy nx,x : lda VX,y : sta d      ; viewX * nx
+        ldy ny,x : lda VY,y : clc : adc d : sta d
+        ldy nz,x : lda VZ,y : clc : adc d
+        bmi @hide            ; dot < 0 -> facing away, skip entirely
+        ; (optional) also reject if too deep for a distance cull
+        ...record as visible...
 @hide   inx
-        cpx    #$60               ; 96 quads
-        bne    @face
-        rts
+        cpx face_count
+        bne @face
 ```
 
-Saves ~43 K cycles/frame by culling 96 -> ~55 verts before projection.
+**Why object-space:** culling before transform can remove ~40% of the work
+up front — the largest single saving in a solid renderer.
 
----
+## 2. Depth sorting — bucket sort
 
-## 17.8 Backface Culling + 8-Bucket Depth Sort
-
-### Backface sign test
-
-```
-dx0 = right_top.x - left_top.x
-dy1 = left_bot.y  - left_top.y
-cross = dx0 * dy1 - dx1 * dy0   (screen space)
-positive = front-facing; negative = backface
-```
-
-### TORUS3D 8-way bucket sort
-
-Depth keys are 0..255 unsigned bytes. No comparisons required — 3 bit shifts give the bucket index.
+For correct occlusion without a z-buffer (there's no RAM/time for one),
+draw back-to-front (painter's algorithm), which needs the visible faces
+**sorted by depth**. Depth keys are bytes, so a **bucket sort** is O(N)
+with zero comparisons:
 
 ```asm
-SortVisible
-        ldx    #$00
-        lda    #$00
-        sta    bkt_0..bkt_7       ; all heads = 0
-
-@fill   lda    BUF_DEPTH,x
+        ; scatter: bucket = depth >> k. Here >>3 of a 0..255 depth gives
+        ; 32 buckets; shift more for fewer, coarser buckets.
+@fill   lda depth,x
+        lsr : lsr : lsr
         tay
-        lsr
-        lsr
-        lsr                      ; depth >> 3 -> bucket 0..7
-        tay
-        lda    bkt_head,y
-        sta    next,x
-        lda    vis_quad,x
-        sta    bkt_head,y         ; push
+        lda bkt_head,y       ; push onto a linked list per bucket
+        sta link,x
+        txa
+        sta bkt_head,y
         inx
-        cpx    vis_count
-        bne    @fill
-
-        ; Drain: bucket 7 (far) -> bucket 0 (near)
-        ldy    #$07
-@bucket lda    bkt_head,y
-        beq    @next
-        ; follow linked list to sorted output
-@next   dey
-        bpl    @bucket
+        cpx vis_count
+        bne @fill
+        ; gather: walk buckets far->near, follow links -> sorted order
 ```
 
-| Sort | N | Use |
-|---|---|---|
-| Optimal 8-bit | < 200 | ZP LUT + walk |
-| Bucket 8-way | 50–200 | TORUS3D preferred; O(N); zero comps |
-| Quicksort 16b | any | add median-of-3 pivot guard |
-| CombSort | any | gap = 1 last pass; nearly sorted |
+**Why buckets:** depth keys are small integers, so shifting gives the
+bucket directly; no compares, linear time, trivial. Compare-based sorts
+(insertion, comb, quick) are only worth it for very small N or non-uniform
+keys — see `algorithms/sorting.md`.
 
-See sorting for full Optimal / CombSort / Quicksort listings.
+**Note:** the painter's algorithm handles convex, non-interpenetrating
+solids. Faces that mutually overlap in depth need splitting (a BSP-style
+approach), which is rarely worth it on this hardware — design meshes to
+avoid it.
 
----
+## See also
+
+- `rotation.md` — the rotated normal and the signed table build this reuses.
+- `algorithms/sorting.md` — depth-sort alternatives (comb, insertion, quick).
+- `display.md` — where culling and sorting sit in the frame loop.

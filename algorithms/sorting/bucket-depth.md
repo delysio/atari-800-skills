@@ -1,9 +1,14 @@
 # Bucket Depth
 
-## 18.3 Bucket Sort — 3D Depth Order (TORUS3D preferred)
+## 18.3 Bucket Sort — 3D Depth Order
 
-TORUS3D uses an 8-way bucket sort for its 50–96 visible quads. Depth keys are
-0–255 unsigned bytes — index = depth >> 3 into 8 buckets. Zero comparisons.
+An 8-way bucket sort is the usual pick for the ~50–100 visible faces of a
+filled-3D object. Depth keys are 0–255 unsigned bytes, so the bucket index
+is `depth >> 5` (256 / 8 = 32 depth units per bucket). Zero comparisons.
+
+> The shift must match the bucket count: `>> 5` gives 8 buckets, `>> 3`
+> would give 32. Using `>> 3` with only 8 bucket heads (below) silently
+> drops the faces that land in buckets 8..31 — a classic mistake.
 
 ```asm
 SortVisible
@@ -12,8 +17,9 @@ SortVisible
         sta    bkt_0..bkt_7
 
 @fill   lda    BUF_DEPTH,x
-        tay
-        lsr                   ; depth >> 3
+        lsr                   ; depth >> 5  -> bucket 0..7
+        lsr
+        lsr
         lsr
         lsr
         tay
@@ -36,7 +42,7 @@ SortVisible
 
 | | |
 |---|---|
-| Buckets | 8 (depth >> 3) |
+| Buckets | 8 (depth >> 5) |
 | Bucket storage | BKT_HEAD[8] ZP |
 | Link storage | NXT_PTR[96] |
 | Cycles | ~500 (96 verts, single pass) |
